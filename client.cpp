@@ -11,17 +11,17 @@
 #define BUF_SIZE 128
 using namespace std;
 
-
+// 枚举值最好以 1 开始 如果不定义  初始化枚举值的时候就会有一个默认值 0 这样会带来潜在问题
 enum CMD {
-	CMD_LOGIN,
-	CMD_LOGIN_RESULT,
-	CMD_LOGOUT,
-	CMD_LOGOUT_RESULT,
-	CMD_ERROR
+	CMD_LOGIN = 1,
+	CMD_LOGIN_RESULT = 2,
+	CMD_LOGOUT = 3,
+	CMD_LOGOUT_RESULT = 4,
+	CMD_ERROR = 5
 };
 typedef struct {
 	short dataLength;  // 数据长度
-	CMD cmd;         // 命令
+	short cmd = NULL; // 命令
 } DataHeader;
 
 typedef struct Login : public DataHeader {
@@ -42,18 +42,19 @@ typedef struct LoginRes : public DataHeader {
 	char msg[128];
 }LoginResult;
 
-typedef struct LogOut :public DataHeader {
+struct LogOut :public DataHeader {
 	LogOut() {
 		dataLength = sizeof(LogOut);
 		cmd = CMD_LOGOUT;
 	}
 	char userName[32];
-}LogOut;
+};
 
 typedef struct LogOutMsg :public DataHeader {
 	LogOutMsg() {
 		dataLength = sizeof(LogOutMsg);
 	}
+	int code;
 	char msg[128];
 }LogOutMsg;
 
@@ -89,10 +90,10 @@ int main() {
 	while (true) {
 		char cmdBuf[BUF_SIZE] = {};
 		// 发送命令
-		scanf_s("%s", cmdBuf, sizeof(cmdBuf));
-
+		//scanf_s("%s", cmdBuf, sizeof(cmdBuf));
+		cin >> cmdBuf;
 		if (0 == strcmp(cmdBuf, "exit")) {
-			printf("正在退出...");
+			printf("正在退出... \n");
 			break;
 		} else if (0 == strcmp(cmdBuf, "login")) {
 			// 向服务端发送请求命令
@@ -103,24 +104,24 @@ int main() {
 			// 接收服务器返回的数据
 			LoginResult resBody;
 			recv(_sock, (char*)&resBody, sizeof(LoginResult), 0);
-			cout << "服务端消息：" << resBody.code << resBody.msg << endl;
+			cout << "服务端消息：" << resBody.msg << endl;
 		} else if (0 == strcmp(cmdBuf, "logout")) {
 			LogOut logout;
 			strcpy_s(logout.userName, "byd");
-			send(_sock, (char*)&logout, sizeof(logout), 0);
+			send(_sock, (char*)&logout, sizeof(LogOut), 0);
 
 			// 接受服务器返回的数据
 			LogOutMsg resBody = {};
 			recv(_sock, (char*)&resBody, sizeof(resBody), 0);
-			printf("服务端消息: %s\n", resBody.msg);
+			cout << "服务端消息：" << resBody.msg << endl;
 		} else {
 			printf("不支持的命令，请重新输入\n");
 		}
 	}
+
 	// 4. 关闭客户端套接字
 	closesocket(_sock);
 	// 清除window socket环境
 	WSACleanup();
-	getchar();
 	return 0;
 }
