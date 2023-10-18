@@ -17,12 +17,13 @@ enum CMD {
 	CMD_LOGIN_RESULT = 2,
 	CMD_LOGOUT = 3,
 	CMD_LOGOUT_RESULT = 4,
-	CMD_ERROR = 5
+	CMD_NEW_USER_JOIN,
+	CMD_ERROR
 };
-typedef struct {
-	short dataLength;  // 数据长度
+struct DataHeader {
+	short dataLength; // 数据长度
 	short cmd = NULL; // 命令
-} DataHeader;
+};
 
 typedef struct Login : public DataHeader {
 	Login() {
@@ -31,16 +32,16 @@ typedef struct Login : public DataHeader {
 	}
 	char userName[32];
 	char passWord[32];
+}Login;
 
-}LoginPackage;
-
-typedef struct LoginRes : public DataHeader {
+struct LoginRes : public DataHeader {
 	LoginRes() {
 		dataLength = sizeof(LoginRes);
+		cmd = CMD_LOGIN_RESULT;
 	}
 	int code;
 	char msg[128];
-}LoginResult;
+};
 
 struct LogOut :public DataHeader {
 	LogOut() {
@@ -53,6 +54,7 @@ struct LogOut :public DataHeader {
 typedef struct LogOutMsg :public DataHeader {
 	LogOutMsg() {
 		dataLength = sizeof(LogOutMsg);
+		cmd = CMD_LOGOUT_RESULT;
 	}
 	int code;
 	char msg[128];
@@ -64,6 +66,56 @@ struct CmdError :public DataHeader {
 	}
 	char msg[128];
 };
+
+struct NewUserJoin :public DataHeader {
+	NewUserJoin() {
+		dataLength = sizeof(NewUserJoin);
+		cmd = CMD_NEW_USER_JOIN;
+		sockId = 0;
+	}
+	int sockId;
+};
+
+int processor(SOCKET _cSock) {
+	// 作为缓冲区
+	char szRecv[1024] = {};
+	int reqLen = recv(_cSock, szRecv, sizeof(DataHeader), 0);
+	DataHeader *header = (DataHeader *)szRecv;
+
+	if (reqLen <= SOCKET_ERROR) {
+		printf("与服务器断开连接 任务结束 \n");
+		return -1;
+	}
+	// 判断粘包 少包
+	/*if (reqLen >= sizeof(DataHeader)) {
+		return 0;
+	}*/
+
+	switch (header->cmd) {
+		case CMD_LOGIN_RESULT:
+		{
+			recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+			LoginRes *res = (LoginRes *)szRecv;
+			cout << "服务器消息: " << res->msg << endl;
+		}break;
+
+		case CMD_LOGOUT_RESULT:
+		{
+			recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+			LogOutMsg *res = (LogOutMsg *)szRecv;
+			cout << "服务器消息: " << res->msg << endl;
+
+		}break;
+		case CMD_NEW_USER_JOIN:
+		{
+			recv(_cSock, szRecv + sizeof(DataHeader), header->dataLength - sizeof(DataHeader), 0);
+			NewUserJoin *res = (NewUserJoin *)szRecv;
+			cout << "服务器消息: 新用户" << res->sockId << "加入房间" << endl;
+
+		}break;
+	}
+}
+
 
 int main() {
 	WORD ver = MAKEWORD(2, 2);
@@ -88,35 +140,34 @@ int main() {
 	};
 
 	while (true) {
-		char cmdBuf[BUF_SIZE] = {};
-		// 发送命令
-		//scanf_s("%s", cmdBuf, sizeof(cmdBuf));
-		cin >> cmdBuf;
-		if (0 == strcmp(cmdBuf, "exit")) {
-			printf("正在退出... \n");
-			break;
-		} else if (0 == strcmp(cmdBuf, "login")) {
-			// 向服务端发送请求命令
-			LoginPackage login;  // 结构体初始化方法
-			strcpy_s(login.userName, "byd");
-			strcpy_s(login.passWord, "123456");
-			send(_sock, (char*)&login, sizeof(LoginPackage), 0);
-			// 接收服务器返回的数据
-			LoginResult resBody;
-			recv(_sock, (char*)&resBody, sizeof(LoginResult), 0);
-			cout << "服务端消息：" << resBody.msg << endl;
-		} else if (0 == strcmp(cmdBuf, "logout")) {
-			LogOut logout;
-			strcpy_s(logout.userName, "byd");
-			send(_sock, (char*)&logout, sizeof(LogOut), 0);
+		// 伯克利 socket
+		fd_set fdRead = {};
+		FD_ZERO(&fdRead);
+		FD_SET(_sock, &fdRead);
 
-			// 接受服务器返回的数据
-			LogOutMsg resBody = {};
-			recv(_sock, (char*)&resBody, sizeof(resBody), 0);
-			cout << "服务端消息：" << resBody.msg << endl;
-		} else {
-			printf("不支持的命令，请重新输入\n");
+		timeval t = { 1,0 };
+
+		int ret = select(_sock + 1, &fdRead, 0, 0, &t);
+
+		if (ret < 0) {
+			printf("select 任务结束 \n");
+			break;
 		}
+
+		if (FD_ISSET(_sock, &fdRead)) {
+			FD_CLR(_sock, &fdRead);
+
+			if (-1 == processor(_sock)) {
+				printf("select 任务结束 \n");
+				break;
+			}
+		}
+		printf("空闲时间处理其它业务 \n");
+		Login login;
+		strcpy_s(login.userName, "byd");
+		strcpy_s(login.passWord, "123456");
+		send(_sock, (char *)&login, sizeof(Login), 0);
+		Sleep(1000);
 	}
 
 	// 4. 关闭客户端套接字
